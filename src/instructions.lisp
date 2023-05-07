@@ -25,9 +25,9 @@ limitations under the License.
                (parameters :initarg :parameters :accessor parameters)))
 
 (defmethod print-object ((inst instruction) out)
-  (with-slots (category expression return-type) inst 
+  (with-slots (category expression return-type parameters) inst 
     (print-unreadable-object (inst out :type t)
-      (format out "~A: ~A -> ~A"  category expression return-type ))))
+      (format out "~A| ~A -> ~A | ~A"  category expression return-type parameters))))
 
 (defparameter *instructions* (make-hash-table :test 'equal))
 (defparameter *instruction-ret* (make-hash-table :test 'equal))
@@ -100,19 +100,18 @@ limitations under the License.
    (loop :for param :in possible-params
          :for coord = (find-match code param)
          :when coord
-         :collect (list param coord)))
-
+         :append (loop :for x :in coord
+                       :collect (list param x))))
 
 
 
 (defparameter *type-placeholders* `(expr_bool const_bool 
-                                              expr_float const_float 
-                                              expr_int const_int const_int_guarded
-                                              expr_int_with expr_bool_with expr_float_with 
-                                              expr_float_1d_array const_float_1d_array
-                                              expr_int_1d_array const_int_1d_array
-                                              expr_bool_1d_array const_bool_1d_array
-                                              ))
+                                    expr_float const_float 
+                                    expr_int const_int const_int_guarded
+                                    expr_int_with expr_bool_with expr_float_with 
+                                    expr_float_1d_array const_float_1d_array
+                                    expr_int_1d_array const_int_1d_array
+                                    expr_bool_1d_array const_bool_1d_array))
 
 
 (defun create-instructions (category expr ret-type)
@@ -123,7 +122,7 @@ limitations under the License.
                     (make-instance 'instruction :id id :expression inst :category category :return-type ret-type :parameters params)))))
 
 (defparameter *core-x->bool* `(
-  (((tor and or) expr_bool expr_bool) bool)
+  (((tor and or) expr_bool (tor const_bool expr_bool)) bool)
   ((not expr_bool) bool)
   (((tor > >= < <= eql) (tor expr_float expr_int) (tor expr_float expr_int const_float)) bool)
   ((reduce (lambda (a i) 
@@ -136,8 +135,6 @@ limitations under the License.
       :initial-value expr_bool) bool)
   ))
 
-(let ((item (first *core-x->bool*)))
-       (create-instructions "core" (first item) (second item)))
 
 (defparameter *core-x->int* `(
   (((tor + - * / mod max min) expr_int (tor expr_int const_int )) int)
@@ -228,11 +225,13 @@ limitations under the License.
 
   ((loop :for i :upto const_int_guarded
          :for k = expr_float
-         :collect (expr_int_with (k float))) int_1d_array)
-              ))
+         :collect (expr_int_with (k float))) int_1d_array)))
 
 
+(defun init-core-instructions ()
+       (loop :for coll :in (list *core-x->bool* *core-x->float* *core-x->int* *core-x->float_1d_array* *core-x->int_1d_array*) 
+             :do (loop :for line :in coll 
+                       :do (loop :for inst :in (create-instructions :core (first line) (second line))
+                                 :do (register-instruction inst)))))
 
-
-(defun )
-
+(init-core-instructions)

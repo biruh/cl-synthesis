@@ -8,4 +8,5 @@
   :depends-on (SQLITE :parachute)
   :components ((:file "src/package")
                (:file "src/instructions")
+               (:file "src/instructions-test")
                (:file "src/main")))
