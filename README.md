@@ -1,3 +1,3 @@
-# Program Synthesis and Genetic Programming Framework
+# Program Synthesis and Genetic Programming
 
 Under Construction
