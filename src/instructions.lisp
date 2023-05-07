@@ -27,19 +27,49 @@ limitations under the License.
 (defmethod print-object ((inst instruction) out)
   (with-slots (category expression return-type parameters) inst 
     (print-unreadable-object (inst out :type t)
-      (format out "~A| ~A -> ~A | ~A"  category expression return-type parameters))))
+      (format out "|~A| ~A -> ~A"  category expression return-type))))
 
 (defparameter *instructions* (make-hash-table :test 'equal))
 (defparameter *instruction-ret* (make-hash-table :test 'equal))
 (defparameter *instruction-param* (make-hash-table :test 'equal))
 (defparameter *instruction-cat* (make-hash-table :test 'equal))
 
+
+
+
+(defun add-in-set (ht setid value)
+  (multiple-value-bind (s exists) (gethash setid ht)
+    (if exists
+        (setf (gethash setid ht) (adjoin value s :test #'equal))
+        (setf (gethash setid ht) (list value)))))
+
+(defun get-instructions-by-param (filter-value)
+   (multiple-value-bind (s exists) (gethash filter-value *instruction-param*)
+    (if exists
+       (loop :for inst-id :in s
+             :collect (gethash inst-id *instructions*)))))
+
+(defun get-instructions-by-cat (filter-value)
+   (multiple-value-bind (s exists) (gethash filter-value *instruction-cat*)
+    (if exists
+       (loop :for inst-id :in s
+             :collect (gethash inst-id *instructions*)))))
+
+(defun get-instructions-by-return-type (filter-value)
+   (multiple-value-bind (s exists) (gethash filter-value *instruction-ret*)
+    (if exists
+       (loop :for inst-id :in s
+             :collect (gethash inst-id *instructions*)))))
+
+
 (defun register-instruction (inst)
    (setf (gethash (id inst) *instructions*) inst)
-   (setf (gethash (category inst) *instruction-cat*) (id inst))
-   (setf (gethash (return-type inst) *instruction-ret*) (id inst))
+   (add-in-set *instruction-ret* (return-type inst) (id inst))
+   (add-in-set *instruction-cat* (category inst) (id inst))
+   
    (loop :for param :in (parameters inst)
-         :do (setf (gethash (first param) *instruction-param*) (id inst))))
+         :do (add-in-set *instruction-param* param (id inst))))
+   
 
 (defun m+ (expr)
     (loop :for i :in expr
