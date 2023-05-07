@@ -17,11 +17,29 @@ limitations under the License.
 |#
 (in-package :cl-synthesis)
 
-(defvar *instruction-db* (sqlite:connect ":memory:"))
+(defclass instruction () 
+              ((id :initarg :id :accessor id)
+               (category :initarg :category :accessor category) 
+               (expression :initarg :expression :accessor expression)
+               (return-type :initarg :return-type :accessor return-type) 
+               (parameters :initarg :parameters :accessor parameters)))
 
-(sqlite:execute-non-query *instruction-db* "create table instructions if not exists (id text primary key, category text not null, expr text not null, retval text not null)") 
-(sqlite:execute-non-query *instruction-db* "create table parameters if not exists (id text not null, param text not null)") 
+(defmethod print-object ((inst instruction) out)
+  (with-slots (category expression return-type parameters) inst 
+    (print-unreadable-object (inst out :type t)
+      (format out "~A| ~A -> ~A | ~A"  category expression return-type parameters))))
 
+(defparameter *instructions* (make-hash-table :test 'equal))
+(defparameter *instruction-ret* (make-hash-table :test 'equal))
+(defparameter *instruction-param* (make-hash-table :test 'equal))
+(defparameter *instruction-cat* (make-hash-table :test 'equal))
+
+(defun register-instruction (inst)
+   (setf (gethash (id inst) *instructions*) inst)
+   (setf (gethash (category inst) *instruction-cat*) (id inst))
+   (setf (gethash (return-type inst) *instruction-ret*) (id inst))
+   (loop :for param :in (parameters inst)
+         :do (setf (gethash (first param) *instruction-param*) (id inst))))
 
 (defun m+ (expr)
     (loop :for i :in expr
@@ -63,14 +81,48 @@ limitations under the License.
            r))
 
 
-(defun register-instruction (expr ret)
-  `(let ((id (sxhash (format nil "~a ~a" ',expr ',ret))))
-     (add-in-set ',ret id)
-     (add-in-assoc id :expr ',expr)
-     (add-in-assoc id :ret ',ret)))
+
+
+(defun find-match (code target)
+  (let ((r '()))
+    (loop :for i :in code
+          :for j :from 0
+          :do (cond
+                ((eql i target) (pushnew (list  j) r))
+                ((listp i) (let ((n (find-match i target)))
+                            (when n
+                              (loop :for k :in n
+                                    :do (pushnew (concatenate 'list (list j) k) r))
+                              )))))
+    r))
+
+(defun find-parameters (code possible-params)
+   (loop :for param :in possible-params
+         :for coord = (find-match code param)
+         :when coord
+         :append (loop :for x :in coord
+                       :collect (list param x))))
+
+
+
+(defparameter *type-placeholders* `(expr_bool const_bool 
+                                    expr_float const_float 
+                                    expr_int const_int const_int_guarded
+                                    expr_int_with expr_bool_with expr_float_with 
+                                    expr_float_1d_array const_float_1d_array
+                                    expr_int_1d_array const_int_1d_array
+                                    expr_bool_1d_array const_bool_1d_array))
+
+
+(defun create-instructions (category expr ret-type)
+  (let ((id (sxhash (format nil "~a ~a" expr ret-type)))
+        (expanded (expand_instruction expr)))
+       (loop :for inst :in expanded
+             :collect (let ((params (find-parameters inst *type-placeholders*)))
+                    (make-instance 'instruction :id id :expression inst :category category :return-type ret-type :parameters params)))))
 
 (defparameter *core-x->bool* `(
-  (((tor and or) expr_bool expr_bool) bool)
+  (((tor and or) expr_bool (tor const_bool expr_bool)) bool)
   ((not expr_bool) bool)
   (((tor > >= < <= eql) (tor expr_float expr_int) (tor expr_float expr_int const_float)) bool)
   ((reduce (lambda (a i) 
@@ -173,12 +225,13 @@ limitations under the License.
 
   ((loop :for i :upto const_int_guarded
          :for k = expr_float
-         :collect (expr_int_with (k float))) int_1d_array)
-              ))
+         :collect (expr_int_with (k float))) int_1d_array)))
 
 
+(defun init-core-instructions ()
+       (loop :for coll :in (list *core-x->bool* *core-x->float* *core-x->int* *core-x->float_1d_array* *core-x->int_1d_array*) 
+             :do (loop :for line :in coll 
+                       :do (loop :for inst :in (create-instructions :core (first line) (second line))
+                                 :do (register-instruction inst)))))
 
-
-(defparameter *type-placeholders* `(expr_bool const_bool expr_float const_float expr_int const_int const_int_guarded
-                                              expr_int_with expr_bool_with expr_float_with 
-                                              ))
+(init-core-instructions)
